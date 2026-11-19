@@ -22,9 +22,6 @@ interface GroupedPingLine {
   v6?: HomepagePingDisplayLine;
 }
 
-/**
- * 将同前缀的 V4 / V6 监控线路归并为一组
- */
 function groupPingLinesByBaseName(lines: HomepagePingDisplayLine[]): GroupedPingLine[] {
   const groups = new Map<string, GroupedPingLine>();
 
@@ -46,11 +43,7 @@ function groupPingLinesByBaseName(lines: HomepagePingDisplayLine[]): GroupedPing
 
     let group = groups.get(groupKey);
     if (!group) {
-      group = {
-        groupKey,
-        baseName,
-        isFallback,
-      };
+      group = { groupKey, baseName, isFallback };
       groups.set(groupKey, group);
     }
 
@@ -69,9 +62,6 @@ function groupPingLinesByBaseName(lines: HomepagePingDisplayLine[]): GroupedPing
   return Array.from(groups.values());
 }
 
-/**
- * 单个协议栈的数值片段（如 V4 38ms）
- */
 function MetricValueReadout({
   line,
   metric,
@@ -105,7 +95,7 @@ function MetricValueReadout({
     : isError && value == null
       ? "!"
       : value == null
-        ? "—"
+        ? "-"
         : metric === "latency"
           ? Math.round(value)
           : value.toFixed(1);
@@ -117,9 +107,7 @@ function MetricValueReadout({
       </span>
       <strong
         className="multi-ping-value tabular"
-        style={{
-          color: value == null ? "var(--text-tertiary)" : valueColor,
-        }}
+        style={{ color: value == null ? "var(--text-tertiary)" : valueColor }}
       >
         {displayValue}
         {value != null && <small>{unit}</small>}
@@ -128,9 +116,6 @@ function MetricValueReadout({
   );
 }
 
-/**
- * 单个协议栈的历史格子条（带独立 Hover Tooltip）
- */
 function ProtocolBucketBar({
   line,
   metric,
@@ -200,19 +185,13 @@ const MultiPingGroupedRow = memo(function MultiPingGroupedRow({
   const displayName = showNameSkeleton ? "加载中" : baseName;
   const chartHeight = density === "compact" ? 9 : 11;
 
-  const buildSummary = (label: string, item?: HomepagePingDisplayLine) => {
-    if (!item) return "";
-    const lat = item.lastValue == null ? "无样本" : `${Math.round(item.lastValue)}ms`;
-    const loss = item.loss == null ? "—" : `${item.loss.toFixed(1)}%`;
-    return `${label}: 延迟 ${lat} / 丢包 ${loss}`;
-  };
-  const rowTitle = [
-    displayName,
-    buildSummary("V4", v4),
-    buildSummary("V6", v6),
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  const v4Text = v4
+    ? `V4 ${v4.lastValue == null ? "-" : Math.round(v4.lastValue) + "ms"}`
+    : "";
+  const v6Text = v6
+    ? `V6 ${v6.lastValue == null ? "-" : Math.round(v6.lastValue) + "ms"}`
+    : "";
+  const rowTitle = [displayName, v4Text, v6Text].filter(Boolean).join(" / ");
 
   return (
     <div
@@ -262,26 +241,15 @@ const MultiPingGroupedRow = memo(function MultiPingGroupedRow({
             flexShrink: 0,
           }}
         >
-          {v4 && (
-            <MetricValueReadout line={v4} metric={metric} protocolLabel="V4" />
-          )}
+          {v4 && <MetricValueReadout line={v4} metric={metric} protocolLabel="V4" />}
           {hasBoth && (
             <span style={{ color: "var(--text-tertiary)", fontSize: "0.85em" }}>/</span>
           )}
-          {v6 && (
-            <MetricValueReadout line={v6} metric={metric} protocolLabel="V6" />
-          )}
+          {v6 && <MetricValueReadout line={v6} metric={metric} protocolLabel="V6" />}
         </span>
       </div>
 
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "6px",
-          width: "100%",
-        }}
-      >
+      <div style={{ display: "flex", alignItems: "center", gap: "6px", width: "100%" }}>
         {v4 && (
           <ProtocolBucketBar
             line={v4}
@@ -349,4 +317,24 @@ export const MultiPingStatus = memo(function MultiPingStatus({
 
   return (
     <div
-      className={clsx("multi-ping
+      className={clsx("multi-ping-status", `is-${density}`, className)}
+      role="group"
+      aria-label="三网延迟与丢包"
+    >
+      <div className="multi-ping-columns">
+        <MultiPingMetricColumn
+          groups={groupedLines}
+          metric="latency"
+          density={density}
+          redrawKey={redrawKey}
+        />
+        <MultiPingMetricColumn
+          groups={groupedLines}
+          metric="loss"
+          density={density}
+          redrawKey={redrawKey}
+        />
+      </div>
+    </div>
+  );
+});

@@ -26,31 +26,25 @@ function groupPingLinesByBaseName(lines: HomepagePingDisplayLine[]): GroupedPing
   const groups = new Map<string, GroupedPingLine>();
 
   for (const line of lines) {
-    // 统一将全角字符转为半角并去除首尾空格
-    const normalized = line.taskName
-      .replace(/[\uff01-\uff5e]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xfee0))
-      .trim();
-    const isFallback = isFallbackTaskName(normalized);
-
-    // 匹配名称中任意位置的 IPv4 / V4 / IPv6 / V6（忽略大小写及前后分隔符）
-    const v6Regex = /[\s\-_()[\]【】]*(?:ipv?6)[\s\-_()[\]【】]*/i;
-    const v4Regex = /[\s\-_()[\]【】]*(?:ipv?4)[\s\-_()[\]【】]*/i;
+    const rawName = line.taskName.trim();
+    const isFallback = isFallbackTaskName(rawName);
+    const upper = rawName.toUpperCase();
 
     let protocol: "v4" | "v6" = "v4";
-    let baseName = normalized;
+    let baseName = rawName;
 
     if (!isFallback) {
-      if (v6Regex.test(normalized)) {
+      if (upper.includes("IPV6") || upper.includes("V6")) {
         protocol = "v6";
-        baseName = normalized.replace(v6Regex, " ").trim();
-      } else if (v4Regex.test(normalized)) {
+        baseName = rawName.replace(/ipv6/gi, "").replace(/v6/gi, "").trim();
+      } else if (upper.includes("IPV4") || upper.includes("V4")) {
         protocol = "v4";
-        baseName = normalized.replace(v4Regex, " ").trim();
+        baseName = rawName.replace(/ipv4/gi, "").replace(/v4/gi, "").trim();
       }
     }
 
     if (!baseName) {
-      baseName = normalized;
+      baseName = rawName;
     }
 
     const groupKey = isFallback ? `fallback-${line.taskId}` : baseName;
@@ -64,7 +58,7 @@ function groupPingLinesByBaseName(lines: HomepagePingDisplayLine[]): GroupedPing
     if (group[protocol]) {
       groups.set(`${groupKey}-${line.taskId}`, {
         groupKey: `${groupKey}-${line.taskId}`,
-        baseName: normalized,
+        baseName: rawName,
         isFallback,
         [protocol]: line,
       });
@@ -181,6 +175,13 @@ function ProtocolBucketBar({
   );
 }
 
+// 判断某协议是否有有效探测数据（若只有单栈且另一栈完全无延迟数据/100%丢包，则自动隐藏无效栈）
+function hasValidProtocolData(item?: HomepagePingDisplayLine): boolean {
+  if (!item) return false;
+  if (item.loadState === "pending") return true;
+  return item.lastValue != null;
+}
+
 const MultiPingGroupedRow = memo(function MultiPingGroupedRow({
   group,
   metric,
@@ -193,19 +194,27 @@ const MultiPingGroupedRow = memo(function MultiPingGroupedRow({
   redrawKey: string;
 }) {
   const { v4, v6, baseName, isFallback } = group;
-  const hasBoth = Boolean(v4 && v6);
-  const primaryLine = v4 ?? v6!;
+
+  const v4Valid = hasValidProtocolData(v4);
+  const v6Valid = hasValidProtocolData(v6);
+
+  // 若两者皆无有效数据，保留原有存在项兜底展示；否则只展示有效协议栈
+  const showV4 = v4Valid || (!v6Valid && Boolean(v4));
+  const showV6 = v6Valid || (!v4Valid && Boolean(v6));
+  const hasBoth = showV4 && showV6;
+
+  const primaryLine = (showV4 ? v4 : v6) ?? v4 ?? v6!;
   const isLoadingAny =
-    (v4?.loadState === "pending" && v4.lastValue == null) ||
-    (v6?.loadState === "pending" && v6.lastValue == null);
+    (showV4 && v4?.loadState === "pending" && v4.lastValue == null) ||
+    (showV6 && v6?.loadState === "pending" && v6.lastValue == null);
   const showNameSkeleton = isLoadingAny && isFallback;
   const displayName = showNameSkeleton ? "加载中" : baseName;
   const chartHeight = density === "compact" ? 9 : 11;
 
-  const v4Text = v4
+  const v4Text = showV4 && v4
     ? `V4 ${v4.lastValue == null ? "-" : Math.round(v4.lastValue) + "ms"}`
     : "";
-  const v6Text = v6
+  const v6Text = showV6 && v6
     ? `V6 ${v6.lastValue == null ? "-" : Math.round(v6.lastValue) + "ms"}`
     : "";
   const rowTitle = [displayName, v4Text, v6Text].filter(Boolean).join(" / ");
@@ -271,16 +280,16 @@ const MultiPingGroupedRow = memo(function MultiPingGroupedRow({
             flexShrink: 0,
           }}
         >
-          {v4 && <MetricValueReadout line={v4} metric={metric} protocolLabel="V4" />}
+          {showV4 && v4 && <MetricValueReadout line={v4} metric={metric} protocolLabel="V4" />}
           {hasBoth && (
             <span style={{ color: "var(--text-tertiary)", fontSize: "10px" }}>/</span>
           )}
-          {v6 && <MetricValueReadout line={v6} metric={metric} protocolLabel="V6" />}
+          {showV6 && v6 && <MetricValueReadout line={v6} metric={metric} protocolLabel="V6" />}
         </span>
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: "5px", width: "100%" }}>
-        {v4 && (
+        {showV4 && v4 && (
           <ProtocolBucketBar
             line={v4}
             metric={metric}
@@ -288,7 +297,7 @@ const MultiPingGroupedRow = memo(function MultiPingGroupedRow({
             redrawKey={redrawKey}
           />
         )}
-        {v6 && (
+        {showV6 && v6 && (
           <ProtocolBucketBar
             line={v6}
             metric={metric}

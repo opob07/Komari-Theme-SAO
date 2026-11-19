@@ -31,7 +31,6 @@ function groupPingLinesByBaseName(lines: HomepagePingDisplayLine[]): GroupedPing
   for (const line of lines) {
     const rawName = line.taskName.trim();
     const isFallback = isFallbackTaskName(rawName);
-    // 匹配末尾的 V4 / V6 / IPv4 / IPv6（忽略大小写及常见连接符）
     const match = !isFallback
       ? rawName.match(/^(.*?)[\s\-_]*(ipv?4|ipv?6)$/i)
       : null;
@@ -55,7 +54,6 @@ function groupPingLinesByBaseName(lines: HomepagePingDisplayLine[]): GroupedPing
       groups.set(groupKey, group);
     }
 
-    // 若同组同协议已存在，则退化为独立行避免覆盖
     if (group[protocol]) {
       groups.set(`${groupKey}-${line.taskId}`, {
         groupKey: `${groupKey}-${line.taskId}`,
@@ -202,7 +200,6 @@ const MultiPingGroupedRow = memo(function MultiPingGroupedRow({
   const displayName = showNameSkeleton ? "加载中" : baseName;
   const chartHeight = density === "compact" ? 9 : 11;
 
-  // 构建整行悬浮提示文本
   const buildSummary = (label: string, item?: HomepagePingDisplayLine) => {
     if (!item) return "";
     const lat = item.lastValue == null ? "无样本" : `${Math.round(item.lastValue)}ms`;
@@ -277,7 +274,6 @@ const MultiPingGroupedRow = memo(function MultiPingGroupedRow({
         </span>
       </div>
 
-      {/* 下方格子条：双栈时左右并排各占 50%，单栈时自动撑满 100% */}
       <div
         style={{
           display: "flex",
@@ -323,4 +319,34 @@ const MultiPingMetricColumn = memo(function MultiPingMetricColumn({
       className="multi-ping-metric-column"
       aria-label={metric === "latency" ? "延迟" : "丢包"}
     >
-      {groups.map
+      {groups.map((group) => (
+        <MultiPingGroupedRow
+          key={group.groupKey}
+          group={group}
+          metric={metric}
+          density={density}
+          redrawKey={redrawKey}
+        />
+      ))}
+    </div>
+  );
+});
+
+export const MultiPingStatus = memo(function MultiPingStatus({
+  lines,
+  density,
+  className,
+}: {
+  lines: HomepagePingDisplayLine[];
+  density: MultiPingStatusDensity;
+  className?: string;
+}) {
+  const { resolvedAppearance } = usePreferences();
+  const colorsVersion = useMetricColorsVersion();
+  const redrawKey = `${resolvedAppearance}:${colorsVersion}`;
+
+  const groupedLines = useMemo(() => groupPingLinesByBaseName(lines), [lines]);
+
+  return (
+    <div
+      className={clsx("multi-ping

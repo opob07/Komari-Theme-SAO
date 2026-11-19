@@ -26,18 +26,32 @@ function groupPingLinesByBaseName(lines: HomepagePingDisplayLine[]): GroupedPing
   const groups = new Map<string, GroupedPingLine>();
 
   for (const line of lines) {
-    const rawName = line.taskName.trim();
-    const isFallback = isFallbackTaskName(rawName);
-    const match = !isFallback
-      ? rawName.match(/^(.*?)[\s\-_]*(ipv?4|ipv?6)$/i)
-      : null;
+    // 统一将全角字符转为半角并去除首尾空格
+    const normalized = line.taskName
+      .replace(/[\uff01-\uff5e]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xfee0))
+      .trim();
+    const isFallback = isFallbackTaskName(normalized);
 
-    const baseName = match && match[1].trim() ? match[1].trim() : rawName;
-    const protocol: "v4" | "v6" = match
-      ? match[2].toLowerCase().includes("6")
-        ? "v6"
-        : "v4"
-      : "v4";
+    // 匹配名称中任意位置的 IPv4 / V4 / IPv6 / V6（忽略大小写及前后分隔符）
+    const v6Regex = /[\s\-_()[\]【】]*(?:ipv?6)[\s\-_()[\]【】]*/i;
+    const v4Regex = /[\s\-_()[\]【】]*(?:ipv?4)[\s\-_()[\]【】]*/i;
+
+    let protocol: "v4" | "v6" = "v4";
+    let baseName = normalized;
+
+    if (!isFallback) {
+      if (v6Regex.test(normalized)) {
+        protocol = "v6";
+        baseName = normalized.replace(v6Regex, " ").trim();
+      } else if (v4Regex.test(normalized)) {
+        protocol = "v4";
+        baseName = normalized.replace(v4Regex, " ").trim();
+      }
+    }
+
+    if (!baseName) {
+      baseName = normalized;
+    }
 
     const groupKey = isFallback ? `fallback-${line.taskId}` : baseName;
 
@@ -50,7 +64,7 @@ function groupPingLinesByBaseName(lines: HomepagePingDisplayLine[]): GroupedPing
     if (group[protocol]) {
       groups.set(`${groupKey}-${line.taskId}`, {
         groupKey: `${groupKey}-${line.taskId}`,
-        baseName: rawName,
+        baseName: normalized,
         isFallback,
         [protocol]: line,
       });
@@ -101,16 +115,19 @@ function MetricValueReadout({
           : value.toFixed(1);
 
   return (
-    <span style={{ display: "inline-flex", alignItems: "baseline", gap: "2px" }}>
-      <span style={{ fontSize: "0.85em", color: "var(--text-secondary)", fontWeight: 500 }}>
+    <span style={{ display: "inline-flex", alignItems: "baseline", gap: "1px", whiteSpace: "nowrap" }}>
+      <span style={{ fontSize: "10px", color: "var(--text-secondary)", fontWeight: 500 }}>
         {protocolLabel}
       </span>
       <strong
         className="multi-ping-value tabular"
-        style={{ color: value == null ? "var(--text-tertiary)" : valueColor }}
+        style={{
+          color: value == null ? "var(--text-tertiary)" : valueColor,
+          fontSize: "11px",
+        }}
       >
         {displayValue}
-        {value != null && <small>{unit}</small>}
+        {value != null && <small style={{ fontSize: "9px" }}>{unit}</small>}
       </strong>
     </span>
   );
@@ -205,23 +222,36 @@ const MultiPingGroupedRow = memo(function MultiPingGroupedRow({
           display: "flex",
           alignItems: "baseline",
           justifyContent: "space-between",
-          gap: "6px",
+          gap: "4px",
+          whiteSpace: "nowrap",
         }}
       >
         <span
           className="multi-ping-name"
-          style={{ display: "inline-flex", alignItems: "baseline", gap: "4px", minWidth: 0 }}
+          style={{
+            display: "inline-flex",
+            alignItems: "baseline",
+            gap: "3px",
+            minWidth: 0,
+          }}
         >
           {showNameSkeleton ? (
             <span className="multi-ping-name-skeleton" aria-label="加载中" />
           ) : (
             <>
-              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              <span
+                style={{
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                  fontSize: "11px",
+                }}
+              >
                 {baseName}
               </span>
               <span
                 style={{
-                  fontSize: "0.85em",
+                  fontSize: "10px",
                   color: "var(--text-tertiary)",
                   fontWeight: 400,
                   flexShrink: 0,
@@ -237,19 +267,19 @@ const MultiPingGroupedRow = memo(function MultiPingGroupedRow({
           style={{
             display: "inline-flex",
             alignItems: "baseline",
-            gap: "4px",
+            gap: "3px",
             flexShrink: 0,
           }}
         >
           {v4 && <MetricValueReadout line={v4} metric={metric} protocolLabel="V4" />}
           {hasBoth && (
-            <span style={{ color: "var(--text-tertiary)", fontSize: "0.85em" }}>/</span>
+            <span style={{ color: "var(--text-tertiary)", fontSize: "10px" }}>/</span>
           )}
           {v6 && <MetricValueReadout line={v6} metric={metric} protocolLabel="V6" />}
         </span>
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: "6px", width: "100%" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "5px", width: "100%" }}>
         {v4 && (
           <ProtocolBucketBar
             line={v4}
